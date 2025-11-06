@@ -16,9 +16,9 @@ except ImportError:
 # =======================
 # TODO: 请将以下 API Key 替换为您的实际密钥，或从环境变量中读取
 # 建议从环境变量读取: os.getenv("API_KEY_NAME")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "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")  # 替换为您的 OpenRouter API key
-SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY", "592dc315ae24b52933d51806d9a37b6fd77f3c40c6ecb5abc60d80424b71cfa3")  # 替换为您的 SERPAPI API key
-JINA_API_KEY = os.getenv("JINA_API_KEY", "jina_338ab89ad9b64ca987ce8ae281fb3216mwqOboAuiTzBZqtODN8RRbLXW_n_")  # 替换为您的 JINA API key
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")  # 替换为您的 OpenRouter API key
+SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY", "")  # 替换为您的 SERPAPI API key
+JINA_API_KEY = os.getenv("JINA_API_KEY", "")  # 替换为您的 JINA API key
 
 # Endpoints
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
