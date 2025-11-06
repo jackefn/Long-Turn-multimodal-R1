@@ -9,7 +9,7 @@ from io import BytesIO
 # =======================
 # TODO: 请将以下 API Key 替换为您的实际密钥，或从环境变量中读取
 # 建议从环境变量读取: os.getenv("SERPAPI_API_KEY")
-SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY", "592dc315ae24b52933d51806d9a37b6fd77f3c40c6ecb5abc60d80424b71cfa3")  # 替换为您的 SerpAPI API key
+SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY", "")  # 替换为您的 SerpAPI API key
 
 # SerpAPI 端点
 SERPAPI_BASE_URL = "https://serpapi.com/search.json"
