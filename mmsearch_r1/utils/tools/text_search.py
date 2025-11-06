@@ -5,9 +5,21 @@ import json
 from typing import List, Tuple, Dict, Optional
 
 # 尝试导入 nest_asyncio 以支持嵌套事件循环
+# 注意：nest_asyncio 不支持 uvloop，需要检查事件循环类型
 try:
     import nest_asyncio
-    nest_asyncio.apply()
+    # 检查当前事件循环类型，如果是 uvloop 则跳过
+    try:
+        loop = asyncio.get_event_loop()
+        if loop is not None and 'uvloop' not in str(type(loop)):
+            nest_asyncio.apply()
+    except (RuntimeError, AttributeError):
+        # 如果没有运行中的事件循环，或者无法获取类型，则尝试应用
+        try:
+            nest_asyncio.apply()
+        except ValueError:
+            # 如果 nest_asyncio 无法应用（例如 uvloop），则跳过
+            pass
 except ImportError:
     pass  # nest_asyncio 不可用，将在运行时处理
 

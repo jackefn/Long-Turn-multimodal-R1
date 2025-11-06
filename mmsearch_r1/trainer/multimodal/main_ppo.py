@@ -26,10 +26,14 @@ def main(config):
 
 
 def run_ppo(config, compute_score=None):
-    if not ray.is_initialized():
-        # this is for local ray cluster
-        ray.init(runtime_env={'env_vars': {'TOKENIZERS_PARALLELISM': 'true', 'NCCL_DEBUG': 'WARN'}})
-
+    # if not ray.is_initialized():
+    #     # this is for local ray cluster
+    #     # Note: When connecting to existing remote cluster, pip runtime_env requires
+    #     # virtualenv on all worker nodes. Ensure torchdata is installed on all
+    #     # cluster nodes beforehand instead of using pip runtime_env.
+    #     ray.init(runtime_env={'env_vars': {'TOKENIZERS_PARALLELISM': 'true', 'NCCL_DEBUG': 'WARN'}})
+    
+    ray.init(address="local", runtime_env={'env_vars': {'TOKENIZERS_PARALLELISM': 'true', 'NCCL_DEBUG': 'WARN'}})
     ray.get(main_task.remote(config, compute_score))
 
 

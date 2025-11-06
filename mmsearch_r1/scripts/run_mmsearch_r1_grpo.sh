@@ -1,11 +1,13 @@
 # This script is for single-node running test
 
-cd multimodal-search-r1;
+export CUDA_VISIBLE_DEVICES=4,5,6,7
+export WANDB_PROJECT_NAME=mmsearch-r1
+export WANDB_EXP_NAME=mmsearch-r1-fvqa
 
 python3 -m mmsearch_r1.trainer.multimodal.main_ppo \
     algorithm.adv_estimator=grpo \
-    data.train_files=$TRAIN_DATA_PATH \
-    data.val_files=$VAL_DATA_PATH \
+    data.train_files=datasets/fvqa \
+    data.val_files=datasets/fvqa \
     data.train_batch_size=32 \
     data.max_prompt_length=4096 \
     data.max_response_length=2048 \
@@ -13,7 +15,7 @@ python3 -m mmsearch_r1.trainer.multimodal.main_ppo \
     data.user_prompt_round_1=mmsearch_r1/prompts/round_1_user_prompt_qwenvl.pkl \
     data.user_prompt_after_image_search=mmsearch_r1/prompts/after_image_search_prompt_qwenvl.pkl \
     data.user_prompt_after_text_search=mmsearch_r1/prompts/after_text_search_prompt_qwenvl.pkl \
-    actor_rollout_ref.model.path=Qwen/Qwen2.5-VL-7B-Instruct \
+    actor_rollout_ref.model.path=/data1/models/Qwen2.5-VL-3B-Instruct \
     actor_rollout_ref.actor.optim.lr=2e-6 \
     actor_rollout_ref.actor.optim.lr_sigmoid_decay_warmup=True \
     actor_rollout_ref.actor.optim.lr_sigmoid_decay_ratio=0.95 \
@@ -51,7 +53,7 @@ python3 -m mmsearch_r1.trainer.multimodal.main_ppo \
     trainer.logger=['console','wandb'] \
     trainer.project_name=$WANDB_PROJECT_NAME \
     trainer.experiment_name=$WANDB_EXP_NAME \
-    trainer.n_gpus_per_node=8 \
+    trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.save_freq=100 \
     trainer.test_freq=100 \
