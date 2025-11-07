@@ -160,6 +160,12 @@ class vLLMRollout_MultiTurn_MMSearch_R1(vLLMRollout):
         # We need 'image_urls' for search, the shape should be aligned with B*R
         if 'image_urls' in non_tensor_batch.keys() and not prompts.meta_info.get('validate', False):
             non_tensor_batch['image_urls'] = _repeat_interleave(non_tensor_batch['image_urls'], self.config.n)
+        
+        # We need 'data_id' and 'data_source' for cache lookup, the shape should be aligned with B*R
+        if 'data_id' in non_tensor_batch.keys() and not prompts.meta_info.get('validate', False):
+            non_tensor_batch['data_id'] = _repeat_interleave(non_tensor_batch['data_id'], self.config.n)
+        if 'data_source' in non_tensor_batch.keys() and not prompts.meta_info.get('validate', False):
+            non_tensor_batch['data_source'] = _repeat_interleave(non_tensor_batch['data_source'], self.config.n)
 
         ##### Loop Setting #####
         to_generate = list(range(batch_size * n))  # B*R, all trajs' index
@@ -225,8 +231,15 @@ class vLLMRollout_MultiTurn_MMSearch_R1(vLLMRollout):
                             idx_to_remove.append(i_gen)
                             print(f"{i_gen} has reached max_image_gen_round {max_image_gen_round}")
                             continue
-                        img_to_search = non_tensor_batch["image_urls"][i_gen]
-                        id_search_query_mapping[str(i_gen)] = {"type": "image", "content": img_to_search}
+                        img_to_search = non_tensor_batch["image_urls"][i_gen] if "image_urls" in non_tensor_batch else ""
+                        data_id = non_tensor_batch.get("data_id", [None] * batch_size)[i_gen] if "data_id" in non_tensor_batch else None
+                        data_source = non_tensor_batch.get("data_source", [None] * batch_size)[i_gen] if "data_source" in non_tensor_batch else None
+                        id_search_query_mapping[str(i_gen)] = {
+                            "type": "image", 
+                            "content": img_to_search,
+                            "data_id": data_id,
+                            "data_source": data_source
+                        }
                         id_image_gen_cnt[i_gen] += 1  # Text Gen Constraint
                     # Need to call text search
                     elif re.search(r'<text_search>.*</text_search>$', decoded_resp_):
@@ -286,8 +299,12 @@ class vLLMRollout_MultiTurn_MMSearch_R1(vLLMRollout):
                                 text_query=_content,
                             )
                         elif _type == "image":
+                            data_id = id_search_query_mapping[str(i_todo)].get("data_id")
+                            data_source = id_search_query_mapping[str(i_todo)].get("data_source")
                             tool_returned_str, tool_returned_images, tool_stat = call_image_search(
                                 image_url=_content,
+                                data_id=data_id,
+                                data_source=data_source,
                             )
                         else:
                             raise ValueError(f"[Round #{current_iteration} Search ERROR] Unknown Search Type: {_type}")
@@ -310,8 +327,12 @@ class vLLMRollout_MultiTurn_MMSearch_R1(vLLMRollout):
                                 text_query=_content,
                             )
                         elif _type == "image":
+                            data_id = id_search_query_mapping[str(i_todo)].get("data_id")
+                            data_source = id_search_query_mapping[str(i_todo)].get("data_source")
                             tool_returned_str, tool_returned_images, tool_stat = call_image_search(
                                 image_url=_content,
+                                data_id=data_id,
+                                data_source=data_source,
                             )
                         else:
                             raise ValueError(

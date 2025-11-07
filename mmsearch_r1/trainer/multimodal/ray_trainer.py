@@ -601,22 +601,22 @@ class RayPPOTrainer:
             if 'image_urls' in test_batch.non_tensor_batch:
                 sample_image_url.extend(list(test_batch.non_tensor_batch['image_urls']))
 
+            # Note: data_id and data_source should be passed to test_gen_batch for cache lookup
+            non_tensor_keys_to_pop = ['raw_prompt_ids']
             if 'multi_modal_data' in test_batch.non_tensor_batch.keys():
+                non_tensor_keys_to_pop.append('multi_modal_data')
                 if 'image_urls' in test_batch.non_tensor_batch:
-                    test_gen_batch = test_batch.pop(
-                        batch_keys=['input_ids', 'attention_mask', 'position_ids'],
-                        non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data', 'image_urls'],
-                    )
-                else:
-                    test_gen_batch = test_batch.pop(
-                        batch_keys=['input_ids', 'attention_mask', 'position_ids'],
-                        non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data'],
-                    )
-            else:
-                test_gen_batch = test_batch.pop(
-                    batch_keys=['input_ids', 'attention_mask', 'position_ids'],
-                    non_tensor_batch_keys=['raw_prompt_ids'],
-                )
+                    non_tensor_keys_to_pop.append('image_urls')
+            # Add data_id and data_source if they exist
+            if 'data_id' in test_batch.non_tensor_batch:
+                non_tensor_keys_to_pop.append('data_id')
+            if 'data_source' in test_batch.non_tensor_batch:
+                non_tensor_keys_to_pop.append('data_source')
+            
+            test_gen_batch = test_batch.pop(
+                batch_keys=['input_ids', 'attention_mask', 'position_ids'],
+                non_tensor_batch_keys=non_tensor_keys_to_pop,
+            )
 
             test_gen_batch.meta_info = {
                 'eos_token_id': self.tokenizer.eos_token_id,
@@ -996,24 +996,24 @@ class RayPPOTrainer:
                 new_batch: DataProto = DataProto.from_single_dict(batch_dict)
                 num_gen_batches += 1
                 # pop those keys for generation
+                # Note: data_id and data_source should be passed to gen_batch for cache lookup
+                non_tensor_keys_to_pop = ['raw_prompt_ids']
                 if 'multi_modal_data' in new_batch.non_tensor_batch.keys():
+                    non_tensor_keys_to_pop.append('multi_modal_data')
                     if (
                         'image_urls' in new_batch.non_tensor_batch
                     ):  # for MMSearch-R1 datasets, the field 'image_urls' is used for potential search actions
-                        gen_batch = new_batch.pop(
-                            batch_keys=['input_ids', 'attention_mask', 'position_ids'],
-                            non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data', 'image_urls'],
-                        )
-                    else:
-                        gen_batch = new_batch.pop(
-                            batch_keys=['input_ids', 'attention_mask', 'position_ids'],
-                            non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data'],
-                        )
-                else:
-                    gen_batch = new_batch.pop(
-                        batch_keys=['input_ids', 'attention_mask', 'position_ids'],
-                        non_tensor_batch_keys=['raw_prompt_ids'],
-                    )
+                        non_tensor_keys_to_pop.append('image_urls')
+                # Add data_id and data_source if they exist
+                if 'data_id' in new_batch.non_tensor_batch:
+                    non_tensor_keys_to_pop.append('data_id')
+                if 'data_source' in new_batch.non_tensor_batch:
+                    non_tensor_keys_to_pop.append('data_source')
+                
+                gen_batch = new_batch.pop(
+                    batch_keys=['input_ids', 'attention_mask', 'position_ids'],
+                    non_tensor_batch_keys=non_tensor_keys_to_pop,
+                )
                 is_last_step = self.global_steps >= self.total_training_steps
 
                 with _timer('step', timing_raw):

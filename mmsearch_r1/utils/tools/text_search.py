@@ -287,19 +287,87 @@ def call_text_search(text_query: str):
     """
     
     # 使用 asyncio.run() 运行异步函数
-    # nest_asyncio 已在文件开头应用（如果可用），允许嵌套事件循环
+    # 注意：需要处理 uvloop 兼容性问题，uvloop 不支持 nest_asyncio
+    # 策略：先尝试直接运行，如果遇到错误，则创建新的标准事件循环
     try:
+        # 首先尝试直接运行（适用于没有运行中的事件循环的情况）
         return asyncio.run(async_text_search(text_query))
-    except RuntimeError as e:
-        # 如果已经在事件循环中运行，尝试获取现有循环并创建任务
+    except (RuntimeError, ValueError) as e:
+        # RuntimeError: 可能是在事件循环中运行
+        # ValueError: 可能是 nest_asyncio 尝试 patch uvloop 失败
+        # 检查是否有运行中的循环
+        running_loop = None
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # 如果循环正在运行且 nest_asyncio 不可用，提示用户
-                print("[Error] Cannot run async function in a running event loop. Please install nest_asyncio: pip install nest_asyncio")
-                raise
-            else:
-                return loop.run_until_complete(async_text_search(text_query))
+            # 使用 get_running_loop() 不会触发 nest_asyncio 的 patch 逻辑
+            running_loop = asyncio.get_running_loop()
         except RuntimeError:
-            # 最后尝试：直接运行（nest_asyncio 应该已经处理了嵌套情况）
-            return asyncio.run(async_text_search(text_query))
+            # 没有运行中的循环
+            pass
+        
+        if running_loop is not None:
+            # 有运行中的循环，检查是否是 uvloop
+            loop_type_str = str(type(running_loop))
+            if 'uvloop' in loop_type_str:
+                # uvloop 且循环正在运行，创建新的标准事件循环
+                import asyncio as std_asyncio
+                new_loop = std_asyncio.new_event_loop()
+                old_loop = None
+                try:
+                    # 保存当前循环（如果需要恢复）
+                    old_loop = running_loop
+                    std_asyncio.set_event_loop(new_loop)
+                    return new_loop.run_until_complete(async_text_search(text_query))
+                finally:
+                    new_loop.close()
+                    # 恢复原来的循环
+                    if old_loop is not None:
+                        try:
+                            std_asyncio.set_event_loop(old_loop)
+                        except:
+                            pass
+            else:
+                # 标准 asyncio 循环，尝试使用 nest_asyncio
+                try:
+                    import nest_asyncio
+                    # 检查 nest_asyncio 是否已经应用
+                    if not hasattr(asyncio, '_nest_patched'):
+                        nest_asyncio.apply()
+                    return asyncio.run(async_text_search(text_query))
+                except (ValueError, RuntimeError):
+                    # nest_asyncio 失败，创建新的事件循环
+                    import asyncio as std_asyncio
+                    new_loop = std_asyncio.new_event_loop()
+                    old_loop = None
+                    try:
+                        old_loop = running_loop
+                        std_asyncio.set_event_loop(new_loop)
+                        return new_loop.run_until_complete(async_text_search(text_query))
+                    finally:
+                        new_loop.close()
+                        if old_loop is not None:
+                            try:
+                                std_asyncio.set_event_loop(old_loop)
+                            except:
+                                pass
+        else:
+            # 没有运行中的循环，但可能 nest_asyncio 尝试 patch 失败
+            # 直接创建新的事件循环
+            import asyncio as std_asyncio
+            new_loop = std_asyncio.new_event_loop()
+            result = None
+            try:
+                std_asyncio.set_event_loop(new_loop)
+                # 确保协程被正确执行
+                coro = async_text_search(text_query)
+                result = new_loop.run_until_complete(coro)
+            except Exception as e:
+                # 如果执行失败，返回错误结果
+                error_msg = f"Error executing text search: {e}"
+                print(f"[Error] {error_msg}")
+                result = (
+                    "[Text Search Results] There is an error encountered in performing search. Please reason with your own capaibilities.",
+                    {"success": False, "num_results": 0, "error": error_msg}
+                )
+            finally:
+                new_loop.close()
+            return result

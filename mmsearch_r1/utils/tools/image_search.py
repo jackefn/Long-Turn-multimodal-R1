@@ -1,6 +1,7 @@
 from PIL import Image
 import os
 import requests
+import pickle
 from typing import List, Tuple, Dict, Optional
 from io import BytesIO
 
@@ -16,6 +17,14 @@ SERPAPI_BASE_URL = "https://serpapi.com/search.json"
 
 # 默认返回的搜索结果数量
 DEFAULT_TOP_K = 3
+
+# 缓存文件路径
+CACHE_DIR = "datasets/fvqa_image_caches"
+TRAIN_CACHE_FILE = os.path.join(CACHE_DIR, "fvqa_train_image_search_results_cache.pkl")
+TEST_CACHE_FILE = os.path.join(CACHE_DIR, "fvqa_test_image_search_results_cache.pkl")
+
+# 全局缓存变量，避免重复加载
+_image_search_cache = {"train": None, "test": None}
 
 
 def download_image_from_url(image_url: str, timeout: int = 300) -> Optional[Image.Image]:
@@ -42,16 +51,39 @@ def download_image_from_url(image_url: str, timeout: int = 300) -> Optional[Imag
         return None
 
 
-def call_image_search(image_url: str, top_k: int = DEFAULT_TOP_K, search_type: str = "visual_matches") -> Tuple[str, List[Image.Image], Dict]:
+def _load_image_search_cache(split: str = "test") -> Dict:
+    """加载图像搜索缓存文件"""
+    global _image_search_cache
+    if _image_search_cache[split] is None:
+        cache_file = TRAIN_CACHE_FILE if split == "train" else TEST_CACHE_FILE
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'rb') as f:
+                    _image_search_cache[split] = pickle.load(f)
+                print(f"[Info] Loaded image search cache from {cache_file}")
+            except Exception as e:
+                print(f"[Warning] Failed to load cache file {cache_file}: {e}")
+                _image_search_cache[split] = {}
+        else:
+            print(f"[Warning] Cache file not found: {cache_file}")
+            _image_search_cache[split] = {}
+    return _image_search_cache[split]
+
+
+def call_image_search(image_url: str, top_k: int = DEFAULT_TOP_K, search_type: str = "visual_matches", 
+                     data_id: Optional[str] = None, data_source: Optional[str] = None) -> Tuple[str, List[Image.Image], Dict]:
     """
     使用 SerpAPI Google Lens API 进行反向图像搜索。
     
     根据 Google Lens API 文档实现，仅支持通过图像 URL 进行搜索。
+    如果 image_url 为空且提供了 data_id，则从缓存文件读取搜索结果。
     
     Args:
-        image_url (str): 查询图像的 URL（必须是可公开访问的 HTTP/HTTPS URL）
+        image_url (str): 查询图像的 URL（必须是可公开访问的 HTTP/HTTPS URL），如果为空则从缓存读取
         top_k (int): 返回的搜索结果数量（默认 3）
         search_type (str): 搜索类型，可选值: "all", "products", "exact_matches", "visual_matches"（默认）
+        data_id (str, optional): 数据ID，用于从缓存文件读取结果
+        data_source (str, optional): 数据源，用于确定使用训练集还是测试集缓存（"train" 或 "test"）
 
     Returns:
         tool_returned_str (str): 格式化的搜索结果字符串，包含每个结果的图像和标题信息
@@ -71,17 +103,72 @@ def call_image_search(image_url: str, top_k: int = DEFAULT_TOP_K, search_type: s
         "error": None,
     }
     
-    # 检查 API Key
+    # 如果 image_url 为空或无效，尝试从缓存文件读取
+    if (not image_url or image_url == "" or 
+        (not image_url.startswith("http://") and not image_url.startswith("https://"))):
+        if data_id:
+            print(f"[Info] Image URL is empty, trying to load from cache using data_id: {data_id}")
+            # 确定使用哪个缓存文件
+            split = "train" if data_source and "train" in str(data_source).lower() else "test"
+            cache = _load_image_search_cache(split)
+            
+            if data_id in cache:
+                cache_data = cache[data_id]
+                tool_returned_web_title_list = cache_data.get('tool_returned_web_title_list', [])
+                tool_returned_images_urls = cache_data.get('tool_returned_images_urls', [])
+                
+                print(f"[Info] Found cached results for {data_id}, titles: {len(tool_returned_web_title_list)}, images: {len(tool_returned_images_urls)}")
+                
+                # 处理缓存的图像URL（限制为 top_k 个）
+                image_urls_to_process = tool_returned_images_urls[:top_k]
+                titles_to_process = tool_returned_web_title_list[:top_k] if len(tool_returned_web_title_list) >= len(image_urls_to_process) else tool_returned_web_title_list + [f"Result {i+1}" for i in range(len(image_urls_to_process) - len(tool_returned_web_title_list))]
+                
+                for idx, (img_url, title) in enumerate(zip(image_urls_to_process, titles_to_process), 1):
+                    try:
+                        # 如果 img_url 是 PIL Image 对象，直接使用
+                        if isinstance(img_url, Image.Image):
+                            tool_returned_images.append(img_url)
+                            tool_returned_str += f"{idx}. image: <|vision_start|><|image_pad|><|vision_end|>\ntitle: {title}\n"
+                        # 如果是 URL 字符串，下载图像
+                        elif isinstance(img_url, str) and (img_url.startswith("http://") or img_url.startswith("https://")):
+                            image = download_image_from_url(img_url)
+                            if image:
+                                tool_returned_images.append(image)
+                                tool_returned_str += f"{idx}. image: <|vision_start|><|image_pad|><|vision_end|>\ntitle: {title}\n"
+                            else:
+                                tool_returned_str += f"{idx}. title: {title}\n"
+                        else:
+                            # 无法处理的图像，只添加标题
+                            tool_returned_str += f"{idx}. title: {title}\n"
+                    except Exception as e:
+                        print(f"[Warning] Error processing cached image {idx}: {e}")
+                        tool_returned_str += f"{idx}. title: {title}\n"
+                        continue
+                
+                tool_success = len(tool_returned_images) > 0
+                tool_stat = {
+                    "success": tool_success,
+                    "num_images": len(tool_returned_images),
+                    "num_results": len(image_urls_to_process),
+                    "source": "cache",
+                }
+                
+                if not tool_success:
+                    tool_returned_str = "[Image Search Results] There is an error encountered in performing search. Please reason with your own capaibilities."
+                
+                return tool_returned_str, tool_returned_images, tool_stat
+            else:
+                print(f"[Warning] data_id {data_id} not found in cache")
+        else:
+            error_msg = "Image URL is not set and no data_id provided. Cannot perform search."
+            print(f"[Error] {error_msg}")
+            tool_returned_str = "[Image Search Results] There is an error encountered in performing search. Please reason with your own capaibilities."
+            tool_stat["error"] = error_msg
+            return tool_returned_str, tool_returned_images, tool_stat
+    
+    # 检查 API Key（只有在实际调用 API 时才需要）
     if SERPAPI_API_KEY == "REDACTED" or not SERPAPI_API_KEY:
         error_msg = "SERPAPI_API_KEY is not set. Please set it as an environment variable or update the code."
-        print(f"[Error] {error_msg}")
-        tool_returned_str = "[Image Search Results] There is an error encountered in performing search. Please reason with your own capaibilities."
-        tool_stat["error"] = error_msg
-        return tool_returned_str, tool_returned_images, tool_stat
-    
-    # 验证输入必须是 URL
-    if not (image_url.startswith("http://") or image_url.startswith("https://")):
-        error_msg = f"Invalid image URL: {image_url}. Only HTTP/HTTPS URLs are supported."
         print(f"[Error] {error_msg}")
         tool_returned_str = "[Image Search Results] There is an error encountered in performing search. Please reason with your own capaibilities."
         tool_stat["error"] = error_msg

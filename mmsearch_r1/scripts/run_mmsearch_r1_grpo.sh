@@ -1,5 +1,39 @@
 # This script is for single-node running test
 
+# Load API keys from my_api_key.txt if it exists
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get project root directory (two levels up from scripts/)
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+API_KEY_FILE="$PROJECT_ROOT/my_api_key.txt"
+
+if [ -f "$API_KEY_FILE" ]; then
+    echo "Loading API keys from $API_KEY_FILE"
+    # Read the file line by line and export variables
+    while IFS='=' read -r key value || [ -n "$key" ]; do
+        # Skip empty lines and comments
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+        # Trim whitespace from key
+        key=$(echo "$key" | xargs)
+        # Remove quotes from value and trim whitespace
+        value=$(echo "$value" | sed 's/^["'\'']//;s/["'\'']$//' | xargs)
+        
+        # Export the variable
+        if [ "$key" = "SERP_API_KEY" ]; then
+            # Map SERP_API_KEY to SERPAPI_API_KEY (which is what the code expects)
+            export SERPAPI_API_KEY="$value"
+            echo "  Loaded SERPAPI_API_KEY (from SERP_API_KEY)"
+        else
+            export "$key=$value"
+            echo "  Loaded $key"
+        fi
+    done < "$API_KEY_FILE"
+    echo "API keys loaded successfully"
+else
+    echo "Warning: API key file not found at $API_KEY_FILE"
+    echo "Please ensure API keys are set as environment variables"
+fi
+
 export CUDA_VISIBLE_DEVICES=4,5,6,7
 export WANDB_PROJECT_NAME=mmsearch-r1
 export WANDB_EXP_NAME=mmsearch-r1-fvqa
